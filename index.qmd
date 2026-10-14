@@ -1,0 +1,237 @@
+---
+title: "Assignment 04: Earnings, Gender, and Unemployment by College Major"
+author: "Itzu Lin"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+execute:
+  warning: false
+  message: false
+---
+
+## Introduction
+
+Choosing a college major is one of the most consequential decisions students make, and
+it connects to many higher-education and labor-market policy questions: how to advise
+students, how to think about student-loan repayment, and how to attract workers into
+fields such as teaching. This analysis uses data on recent college graduates (ages
+under 28) from the American Community Survey 2010--2012, compiled by FiveThirtyEight
+for the story
+[The Economic Guide To Picking A College Major](https://fivethirtyeight.com/features/the-economic-guide-to-picking-a-college-major/).
+
+**Data source:** [`recent-grads.csv` on the FiveThirtyEight GitHub repository](https://github.com/fivethirtyeight/data/tree/master/college-majors).
+Each row is one college major (172 majors with complete data). The data is read
+directly from the web, so no data file is stored in this repository.
+
+## Setup and Data
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(scales)
+
+grads_url <- "https://raw.githubusercontent.com/fivethirtyeight/data/master/college-majors/recent-grads.csv"
+
+stem_categories <- c("Engineering", "Computers & Mathematics",
+                     "Biology & Life Science", "Physical Sciences")
+
+grads <- read_csv(grads_url, show_col_types = FALSE) |>
+  drop_na() |>  # removes the one major with missing values
+  mutate(field_type = if_else(Major_category %in% stem_categories,
+                              "STEM", "Non-STEM"))
+
+source_note <- "Source: FiveThirtyEight, American Community Survey 2010-2012 (recent graduates under 28)"
+```
+
+## Visualization 1: Earnings and the Share of Women (Scatter Plot)
+
+*How to read it: each point is one major. Further right means more women in the major;
+higher up means higher earnings. Bigger points are majors with more graduates.*
+
+```{r}
+#| label: fig-scatter
+#| fig-width: 9
+#| fig-height: 6
+#| fig-alt: "Scatter plot of median earnings against the share of women for each major, with a downward-sloping trend line."
+ggplot(grads, aes(x = ShareWomen, y = Median)) +
+  geom_point(aes(size = Total, color = field_type, shape = field_type),
+             alpha = 0.7) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", linewidth = 0.8) +
+  scale_x_continuous(labels = label_percent()) +
+  scale_y_continuous(labels = label_dollar()) +
+  scale_color_manual(values = c("STEM" = "#0072B2", "Non-STEM" = "#E69F00")) +
+  scale_shape_manual(values = c("STEM" = 16, "Non-STEM" = 17)) +
+  scale_size_continuous(labels = label_comma(), range = c(1, 8)) +
+  labs(
+    title = "Majors with more women tend to have lower earnings",
+    subtitle = "Each point is one major; the black line is a linear trend",
+    x = "Women as a share of graduates in the major",
+    y = "Median earnings (full-time, year-round workers)",
+    color = "Field type",
+    shape = "Field type",
+    size = "Number of graduates",
+    caption = source_note
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+Majors with a larger share of women tend to have lower median earnings: the trend line
+starts near \$56,000 for a major with no women and falls by roughly \$3,000 for every
+10-percentage-point increase in the share of women (the correlation is -0.62). The
+STEM majors (blue) cluster toward the upper left, while most non-STEM majors (orange)
+sit toward the lower right. This is a pattern across majors, not evidence that women
+are paid less than men in the same job, because the data describe majors rather than
+individuals. For policy, it suggests that earnings differences across fields of study
+are closely tied to who enrolls in which fields, which matters for career advising and
+for the pay of female-dominated fields such as education and health.
+
+## Visualization 2: Average Earnings by Major Category (Bar Chart)
+
+*How to read it: each bar is a group of related majors, sorted from highest to lowest
+average earnings. The bar's color shows how many of its graduates are women (darker =
+fewer women, lighter = more women).*
+
+```{r}
+#| label: fig-bar
+#| fig-width: 10
+#| fig-height: 6.5
+#| fig-alt: "Horizontal bar chart of average median earnings for 16 major categories, with Engineering highest and Psychology and Social Work lowest. Bars are shaded by average share of women."
+category_summary <- grads |>
+  group_by(Major_category) |>
+  summarise(avg_median_earnings = mean(Median),
+            avg_share_women = mean(ShareWomen),
+            n_majors = n())
+
+ggplot(category_summary,
+       aes(x = reorder(Major_category, avg_median_earnings),
+           y = avg_median_earnings,
+           fill = avg_share_women)) +
+  geom_col(width = 0.7) +
+  coord_flip() +
+  scale_y_continuous(labels = label_dollar(),
+                     expand = expansion(mult = c(0, 0.05))) +
+  scale_fill_viridis_c(labels = label_percent(), end = 0.9) +
+  labs(
+    title = "Engineering stands far above every other major category",
+    subtitle = "Color shows the category's average share of women",
+    x = NULL,
+    y = "Average median earnings across majors in the category",
+    fill = "Average share\nof women",
+    caption = source_note
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+Engineering majors have the highest average median earnings at about \$57,400,
+well ahead of Business (about \$43,500), while Psychology & Social Work (about
+\$30,100) and Humanities & Liberal Arts (about \$31,900) are at the bottom. The
+shading shows that the highest-paying category is only about 24% women, whereas
+Education (75% women) averages about \$32,400 and Psychology & Social Work (79% women)
+is the lowest-paid category. Health, at about 80% women, lands in the middle at roughly
+\$36,800. These gaps are relevant to debates about teacher pay and recruitment. Note
+that each category is a simple average across majors (not weighted by the number of
+graduates), and "Interdisciplinary" contains only one major.
+
+## Visualization 3: Unemployment Rates Across Majors (Histogram)
+
+*How to read it: the horizontal axis is the unemployment rate; the height of each bar
+is how many majors fall in that range. A tall bar means many majors have a similar
+unemployment rate.*
+
+```{r}
+#| label: fig-histogram
+#| fig-width: 9
+#| fig-height: 6
+#| fig-alt: "Histogram of unemployment rates across 172 majors, centered around 6 to 7 percent with a long tail to the right."
+ggplot(grads, aes(x = Unemployment_rate)) +
+  geom_histogram(bins = 20, fill = "#0072B2", color = "white") +
+  scale_x_continuous(labels = label_percent()) +
+  labs(
+    title = "Most majors have unemployment rates between 5% and 9%",
+    subtitle = "Distribution of unemployment rates across 172 majors",
+    x = "Unemployment rate of recent graduates",
+    y = "Number of majors",
+    caption = source_note
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+Half of all majors have unemployment rates between about 5.0% and 8.7%, and the typical
+(median) major sits at about 6.8%. Only five majors have rates above 12%, and the
+highest, Nuclear Engineering at 17.7%, is based on just 17 survey respondents, so
+extreme values like this are noisy. These data cover 2010--2012, shortly after the Great
+Recession, so the rates reflect a weak labor market and would likely look different
+today. The policy takeaway is that even in high-earning fields unemployment can be
+substantial, so earnings alone do not capture the risks facing recent graduates.
+
+## Visualization 4: STEM vs. Non-STEM Earnings (Boxplot)
+
+*How to read it: the thick line inside each box is the middle (median) major, and the
+box covers the middle half of majors. Lines extend to typical high and low values, and
+dots are unusual majors.*
+
+```{r}
+#| label: fig-boxplot
+#| fig-width: 9
+#| fig-height: 6
+#| fig-alt: "Boxplot comparing median earnings of STEM and non-STEM majors; the STEM box sits higher and is much wider."
+ggplot(grads, aes(x = field_type, y = Median, fill = field_type)) +
+  geom_boxplot(width = 0.5, alpha = 0.8, show.legend = FALSE) +
+  scale_y_continuous(labels = label_dollar()) +
+  scale_fill_manual(values = c("STEM" = "#0072B2", "Non-STEM" = "#E69F00")) +
+  labs(
+    title = "STEM majors typically earn more, but the groups overlap",
+    subtitle = "Median earnings of each major, grouped by field type",
+    x = NULL,
+    y = "Median earnings (full-time, year-round workers)",
+    caption = paste0(source_note,
+                     "\nSTEM = Engineering, Computers & Mathematics, Biology & Life Science, Physical Sciences")
+  ) +
+  theme_minimal(base_size = 13)
+```
+
+The typical STEM major earns about \$45,000 compared with about \$34,000 for non-STEM
+majors, a gap of roughly \$11,000. The spread is also much wider in STEM, from \$26,000
+(Zoology) up to \$110,000 (Petroleum Engineering), so choosing a STEM field does not
+guarantee high pay. The groups overlap: 11 non-STEM majors, such as Actuarial Science
+(\$62,000), earn more than the median STEM major. STEM majors also have slightly lower
+typical unemployment (about 6.1% versus 7.0%), which supports policies that expand
+access to STEM programs, though the definition of STEM used here is my own choice and
+a different definition (for example, including Health) could change the comparison.
+
+## Conclusion
+
+Taken together, the four graphs show that what a student studies is strongly related to
+both pay and labor-market risk. Earnings differ by tens of thousands of dollars across
+major categories (Visualizations 2 and 4), fields with more women tend to pay less
+(Visualization 1), and unemployment varies much less across majors than earnings do
+(Visualization 3). These are descriptive patterns from one time period and do not show
+that majors cause these outcomes, but they are relevant for policymakers thinking about
+student advising, loan repayment, and workforce pipelines into lower-paid but socially
+important fields such as education.
+
+## Visualization Requirements Checklist
+
+| Requirement Category | Specific Element / Code Used | Graph # (1, 2, 3, or 4) |
+| :--- | :--- | :--- |
+| **Geom 1** | `geom_point()` | 1 |
+| **Geom 2** | `geom_smooth()` | 1 |
+| **Geom 3** | `geom_col()` | 2 |
+| **Geom 4** | `geom_histogram()` | 3 |
+| **Geom 5** | `geom_boxplot()` | 4 |
+| **Aesthetic 1** *(inside `aes()`)* | `x` | 1, 2, 3, 4 |
+| **Aesthetic 2** *(inside `aes()`)* | `y` | 1, 2, 4 |
+| **Aesthetic 3** *(inside `aes()`)* | `size` | 1 |
+| **Aesthetic 4** *(inside `aes()`)* | `color` | 1 |
+| **Aesthetic 5** *(inside `aes()`)* | `shape` | 1 |
+| **Aesthetic 6** *(inside `aes()`)* | `fill` | 2, 4 |
+| **Non-Aesthetic 1** *(outside `aes()`)* | `alpha = 0.7` / `alpha = 0.8` | 1, 4 |
+| **Non-Aesthetic 2** *(outside `aes()`)* | `method = "lm"` | 1 |
+| **Non-Aesthetic 3** *(outside `aes()`)* | `se = FALSE` | 1 |
+| **Non-Aesthetic 4** *(outside `aes()`)* | `linewidth = 0.8` | 1 |
+| **Non-Aesthetic 5** *(outside `aes()`)* | `width = 0.7` / `width = 0.5` | 2, 4 |
+| **Non-Aesthetic 6** *(outside `aes()`)* | `bins = 20` | 3 |
+| **Custom Scale 1** | `scale_color_manual()` | 1 |
+| **Custom Scale 2** | `scale_fill_viridis_c()` | 2 |
