@@ -1,0 +1,10 @@
+# R / RStudio
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*_files/
+*.Rcheck/
+# Data files (never commit data for this assignment)
+*.csv
+*.xlsx
